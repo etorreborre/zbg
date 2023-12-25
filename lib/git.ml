@@ -2,12 +2,20 @@ open Base
 
 (* INTERNALS *)
 
+let git_silent = Git_command.git_silent
+
+let git = Git_command.git
+
+let git_stdout = Git_command.git_stdout
+
+let status = Status.status
+
 let get_current_branch () : string =
-  Process.proc_stdout "git rev-parse --abbrev-ref HEAD"
+  git_stdout "rev-parse --abbrev-ref HEAD"
 
 let fetch_main_branch () : string =
   let remote_main_branch =
-    Process.proc_stdout "git rev-parse --abbrev-ref origin/HEAD"
+    git_stdout "rev-parse --abbrev-ref origin/HEAD"
   in
   Process.proc_stdout @@ Printf.sprintf "basename %s" remote_main_branch
 (* TODO: use pure function *)
@@ -19,11 +27,7 @@ let branch_or_main (branch_opt : string option) : string =
 
 (* Read user login from user.login in git config. *)
 let get_login () : string option =
-  let home_dir = Unix.getenv "HOME" in
-  let login =
-    Process.proc_stdout
-    @@ Printf.sprintf "HOME=%s git config user.login" home_dir
-  in
+  let login = git_stdout "user.login" in
   if String.is_empty login then None else Some login
 
 let mk_branch_description (description : string list) : string =
@@ -44,8 +48,8 @@ type tag_action = Delete | Create
 
 let clear force =
   let clear_changes () =
-    Process.proc "git add .";
-    Process.proc "git reset --hard"
+    git "add .";
+    git "reset --hard"
   in
 
   let prompt =
@@ -65,10 +69,10 @@ let clear force =
 
 let commit message_words =
   let message = Extended_string.unwords message_words in
-  Process.proc "git add .";
+  git "add .";
   match message with
-  | "" -> Process.proc "git commit"
-  | message -> Process.proc @@ Printf.sprintf "git commit --message=%S" message
+  | "" -> git "commit"
+  | message -> git @@ Printf.sprintf "commit --message=%S" message
 
 let log commit =
   (* Log format is:
@@ -83,13 +87,13 @@ let log commit =
      <%ae>%n       %C(bold blue)Date%C(reset): %cd%n"
   in
   let date_format = "%d %b %Y %H:%M:%S %z" in
-  Process.proc_silent
-  @@ Printf.sprintf "git log --date='format:%s' --format='format: %s' %s"
+  git_silent
+  @@ Printf.sprintf "log --date='format:%s' --format='format: %s' %s"
        date_format log_format commit
 
 let new_ description =
   let create_branch branch_name =
-    Process.proc @@ Printf.sprintf "git checkout -b %s" branch_name
+    git @@ Printf.sprintf "checkout -b %s" branch_name
   in
   let branch_description = mk_branch_description description in
   let branch_name =
@@ -112,14 +116,12 @@ let push force =
     | NoForce -> ""
     | Force -> "--force"
   in
-  Process.proc
-  @@ Printf.sprintf "git push --set-upstream origin %s %s" current_branch
-       flag_option
+  git @@ Printf.sprintf "push --set-upstream origin %s %s" current_branch flag_option
 
 let rebase branch_opt =
   let branch = branch_or_main branch_opt in
-  Process.proc @@ Printf.sprintf "git fetch origin %s" branch;
-  Process.proc @@ Printf.sprintf "git rebase origin/%s" branch
+  git @@ Printf.sprintf "fetch origin %s" branch;
+  git @@ Printf.sprintf "rebase origin/%s" branch
 
 let stash msg_opt =
   let msg_arg =
@@ -127,47 +129,45 @@ let stash msg_opt =
     | None -> ""
     | Some msg -> Printf.sprintf "--message=%S" msg
   in
-  Process.proc @@ Printf.sprintf "git stash push --include-untracked %s" msg_arg
-
-let status = Status.status
+  git @@ Printf.sprintf "stash push --include-untracked %s" msg_arg
 
 let switch branch_opt =
   let branch = branch_or_main branch_opt in
-  Process.proc @@ Printf.sprintf "git checkout %s" branch;
-  Process.proc "git pull --ff-only --prune"
+  git @@ Printf.sprintf "checkout %s" branch;
+  git "pull --ff-only --prune"
 
 let sync force =
   let current_branch = get_current_branch () in
   match force with
   | NoForce ->
-      Process.proc
-      @@ Printf.sprintf "git pull --ff-only origin %s" current_branch
+      git
+      @@ Printf.sprintf "pull --ff-only origin %s" current_branch
   | Force ->
-      Process.proc @@ Printf.sprintf "git fetch origin %s" current_branch;
-      Process.proc @@ Printf.sprintf "git reset --hard origin/%s" current_branch
+      git @@ Printf.sprintf "fetch origin %s" current_branch;
+      git @@ Printf.sprintf "reset --hard origin/%s" current_branch
 
 let tag tag_name tag_action =
   match tag_action with
   | Create ->
       (* create tag locally *)
-      Process.proc
+      git
       @@ Printf.sprintf
-           "git tag --annotate %s --message='Tag for the %s release'" tag_name
+           "tag --annotate %s --message='Tag for the %s release'" tag_name
            tag_name;
       (* push tags *)
-      Process.proc "git push origin --tags"
+      git "push origin --tags"
   | Delete ->
       (* delete tag locally *)
-      Process.proc @@ Printf.sprintf "git tag --delete %s" tag_name;
+      git @@ Printf.sprintf "tag --delete %s" tag_name;
       (* delete tag remotely *)
-      Process.proc @@ Printf.sprintf "git push --delete origin %s" tag_name
+      git @@ Printf.sprintf "push --delete origin %s" tag_name
 
-let uncommit () = Process.proc "git reset HEAD~1"
-let unstash () = Process.proc "git stash pop"
+let uncommit () = git "reset HEAD~1"
+let unstash () = git "stash pop"
 
 let done_ () =
   let prev_branch = get_current_branch () in
   let main_branch = fetch_main_branch () in
   switch (Some main_branch);
   if String.( <> ) prev_branch main_branch then
-    Process.proc @@ Printf.sprintf "git branch --delete %s" prev_branch
+    git @@ Printf.sprintf "branch --delete %s" prev_branch

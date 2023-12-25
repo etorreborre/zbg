@@ -4,6 +4,15 @@ type force_flag = NoForce | Force
 (* Action to do with the tag: delete or create *)
 type tag_action = Delete | Create
 
+val git_silent : string -> unit
+(** Invoke a git command with arguments *)
+
+val git:  string -> unit
+(** Invoke a git command with arguments and print the result to stdout *)
+
+val git_stdout: string -> string
+(** Invoke a git command with arguments and capture the stdout output *)
+
 val clear : force_flag -> unit
 (** Clear all local changes unrecoverably. *)
 

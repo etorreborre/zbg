@@ -4,6 +4,13 @@ open Message
 
 (* Internal functions *)
 
+let git_silent = Git_command.git_silent
+
+let git = Git_command.git
+
+let git_stdout = Git_command.git_stdout
+
+
 (* Extract the length of the longest element by a given string extractor. *)
 let max_len_on : 'a. ('a -> string) -> 'a list -> int =
  fun f l ->
@@ -17,25 +24,24 @@ let with_staged_files : 'a. string -> (unit -> 'a) -> 'a =
  fun git_cmd action ->
   let stage_files =
     List.iter ~f:(fun file ->
-        Fn.ignore @@ Process.proc_stdout @@ Printf.sprintf "git add %s" file)
+      git_silent @@ Printf.sprintf "add %s" file)
   in
   let reset_files =
     List.iter ~f:(fun file ->
-        Fn.ignore
-        @@ Process.proc_stdout
-        @@ Printf.sprintf "git reset -- %s" file)
+        git_silent
+        @@ Printf.sprintf "reset -- %s" file)
   in
-  let files_to_stage = String.split_lines @@ Process.proc_stdout git_cmd in
+  let files_to_stage = String.split_lines @@ git_stdout git_cmd in
   stage_files files_to_stage;
   Exn.protect ~f:action ~finally:(fun () -> reset_files files_to_stage)
 
 (* Perform the given action by staging all deleted files first. *)
 let with_deleted_files =
-  with_staged_files "git ls-files --deleted --exclude-standard"
+  with_staged_files "ls-files --deleted --exclude-standard"
 
 (* Perform the given action by staging all untracked files first. *)
 let with_untracked_files =
-  with_staged_files "git ls-files --others --exclude-standard"
+  with_staged_files "ls-files --others --exclude-standard"
 
 (* API *)
 
@@ -136,7 +142,7 @@ let parse_diff_name_status (status : string) : file_status option =
 
 (* Get the list of all changed files and their change statuses. *)
 let get_file_statuses (commit : string) : file_status list =
-  Process.proc_stdout (Printf.sprintf "git diff --name-status %s" commit)
+  git_stdout (Printf.sprintf "diff --name-status %s" commit)
   |> String.split_lines
   |> List.filter_map ~f:parse_diff_name_status
   |> List.sort ~compare:(fun ds1 ds2 -> String.compare ds1.file ds2.file)
@@ -285,13 +291,13 @@ let parse_diff_details (stat_line : string) : diff_details option =
 *)
 
 let get_git_base_dir =
-  Process.proc_stdout "git rev-parse --show-toplevel"
+  git_stdout "rev-parse --show-toplevel"
   |> String.rstrip ~drop:(fun c -> Char.( = ) c '\n')
 
 let get_file_diff_stat ~(commit : string) ~(file : string) : diff_details =
   let diff_stat =
-    Process.proc_stdout
-    @@ Printf.sprintf "git diff %s --stat --color=never -- %s" commit
+    git_stdout
+    @@ Printf.sprintf "diff %s --stat --color=never -- %s" commit
          (get_git_base_dir ^ "/" ^ file)
   in
   match String.split_lines diff_stat with
@@ -333,7 +339,7 @@ let git_rebase_help =
 (* Show all files that currently have conflicts. *)
 let show_conflict_files () =
   let diff_conflict_files =
-    Process.proc_stdout "git diff --name-only --diff-filter=U"
+    git_stdout "diff --name-only --diff-filter=U"
   in
   match String.split_lines diff_conflict_files with
   | [] -> ()
